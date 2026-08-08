@@ -14,9 +14,9 @@ def parse_cmd(cmdline):
         else:
             cmd.append(str(i))
     return cmd
-def execute(*cmdline, check=True):
-    logger = getLogger("ShellExecute")
-    out_logger = getLogger("ShellExecute_tty")
+def execute(*cmdline, check=True, log=True):
+    logger = getLogger("ShellExecute", not log)
+    out_logger = getLogger("ShellExecute_tty", not log)
     cmd = parse_cmd(cmdline)
     logger.info(f"Executing \033[33m'{"' '".join(cmd)}'\033[0m")
     r1, w1 = os.pipe2(os.O_NONBLOCK)
@@ -74,9 +74,9 @@ def execute(*cmdline, check=True):
         raise ChildProcessError(f"Process exited with exit code {code}")
     logger.info(f"Process exited with exit code {code}")
 
-def execute_capture(*cmdline, check=True):
-    logger = getLogger("ShellExecute")
-    out_logger = getLogger("ShellExecute_tty")
+def execute_capture(*cmdline, check=True, log=True):
+    logger = getLogger("ShellExecute", not log)
+    out_logger = getLogger("ShellExecute_tty", not log)
     cmd = parse_cmd(cmdline)
     logger.info(f"Executing \033[33m'{"' '".join(cmd)}'\033[0m - Output has been captured.")
     try:

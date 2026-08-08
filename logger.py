@@ -8,11 +8,13 @@ def verbose(level):
     global LEVEL
     LEVEL = level
 
-def getLogger(name: str):
+def getLogger(name: str, dummy=False):
     
     # 创建logger对象
     logger = logging.getLogger(name)
     logger.setLevel(LEVEL)
+    if dummy:
+        logger.setLevel(999999)
     # 创建控制台日志处理器
     console_handler = logging.StreamHandler()
     console_handler.setLevel(LEVEL)
