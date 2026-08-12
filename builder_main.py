@@ -121,6 +121,8 @@ def main():
                     print()
             else:
                 make(cfg, args.target or cfg.default)
+    except ChildProcessError:
+        sys.exit(1)
     except BaseException as e:
         for i in "".join(traceback.format_exception(e)).splitlines():
             logger.critical(i)
