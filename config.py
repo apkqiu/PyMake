@@ -74,10 +74,7 @@ class MakeConfig:
 
     def command(self, name: str):
         def wrapper(func: Callable):
-            if name in self.commands:
-                self.commands[name] = lambda: (self.commands[name], func)
-            else:
-                self.commands[name] = func
+            self.commands[name] = func
             return func
 
         return wrapper
@@ -103,24 +100,14 @@ class MakeConfig:
         return partial(self.add, product, requirements)
 
     def include_cfg(self, cfg: "MakeConfig"):
-        for prod, v in cfg.tasks.items():
-            req, call = v
-            if prod in self.tasks:
-                self.tasks[prod][0].extend(req)
-                self.tasks[prod][1] = lambda *x, prod=prod, call=call: (
-                    self.tasks[prod][1](*x),
-                    call(*x),
-                )
-            else:
-                self.tasks[prod] = [req, call]
-        for name, f in cfg.commands.items():
-            self.command(name)(f)
-
+        self.tasks.update(cfg.tasks)
+        self.commands.update(cfg.commands)
         if self.default is None:
             self.default = cfg.default
 
     def include(self, file: str):
-        self.include_cfg(import_from(file))
+        cfg = import_from(file)
+        self.include_cfg(cfg)
 
     def subdir(self, dir: str):
         frame = inspect.currentframe().f_back

@@ -1,5 +1,8 @@
+from datetime import datetime
 import os
+import shutil
 import subprocess
+import threading
 from collections.abc import Iterable
 
 from .logger import getLogger
@@ -17,78 +20,67 @@ def parse_cmd(cmdline):
     return cmd
 
 
-def execute(*cmdline, env:dict[str, str]|None=None, check=True, log=True):
-    logger = getLogger("ShellExecute", not log)
-    out_logger = getLogger("ShellExecute_tty", not log)
+id = 0
+id_lock = threading.Lock()
+LOGDIR = os.path.join("logs",datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
+os.makedirs(LOGDIR, exist_ok=True)
+
+
+def execute(
+    *cmdline, cwd: str | None = None, env: dict[str, str] | None = None, check=True
+):
+    logger = getLogger("ShellExecute")
     cmd = parse_cmd(cmdline)
-    logger.info(f"Executing \033[33m'{"' '".join(cmd)}'\033[0m")
-    r1, w1 = os.pipe2(os.O_NONBLOCK)
-    r2, w2 = os.pipe2(os.O_NONBLOCK)
-    p = subprocess.Popen(cmd, stdout=w1, stderr=w2, env=env)
-    stdout = open(r1, "rb")
-    stderr = open(r2, "rb")
-    prev_outbuf = b""
-    prev_errbuf = b""
-    outbuf = b""
-    errbuf = b""
-    while p.poll() is None:
-        c = stdout.read(1)
-        if c:
-            outbuf += c
-            if outbuf.endswith(b"\n"):
-                out_logger.info(outbuf.decode().strip())
-                outbuf = b""
-        else:
-            if outbuf != prev_outbuf:
-                prev_outbuf = outbuf
-                out_logger.info(outbuf.decode().strip() + "<?>")
+    lid = 0
+    with id_lock:
+        global id
+        id += 1
+        lid = id
+    log_out_name = os.path.join(LOGDIR, f"run-{lid}-stdout.log")
+    log_err_name = os.path.join(LOGDIR, f"run-{lid}-stderr.log")
 
-        c = stderr.read(1)
-        if c:
-            errbuf += c
-            if errbuf.endswith(b"\n"):
-                out_logger.error(errbuf.decode().strip())
-                errbuf = b""
-        else:
-            if errbuf != prev_errbuf:
-                prev_errbuf = errbuf
-                out_logger.error(errbuf.decode().strip() + "<?>")
-    while True:
-        c = stdout.read(1)
-        if c:
-            outbuf += c
-            if outbuf.endswith(b"\n"):
-                out_logger.info(outbuf.decode().strip())
-                outbuf = b""
-        else:
-            break
-    while True:
-        c = stderr.read(1)
-        if c:
-            errbuf += c
-            if errbuf.endswith(b"\n"):
-                out_logger.error(errbuf.decode().strip())
-                errbuf = b""
-        else:
-            break
-    code = p.poll()
+    logger.info(f"Executing \033[33m'{"' '".join(cmd)}'\033[0m (Run {lid})")
+
+    with open(log_out_name, "w") as log_out, open(log_err_name, "w") as log_err:
+        log_out.write(f"Command: {cmd!r}\n\n") # 使用repr消歧义
+        log_err.write(f"Command: {cmd!r}\n\n")
+
+        log_out.flush()
+        log_err.flush()
+        code = subprocess.call(
+            cmd,
+            env=env,
+            cwd=cwd,
+            stdout=log_out.fileno(),
+            stderr=log_err.fileno(),
+        )
+
+        # 由于stderr不常用，可以放一些统计性的东西：
+
+        log_err.write(f"""------------------------------------
+Exit Code: {code}""")
+        log_err.flush()
+
     if check and code:
-        logger.error(f"Process exited with exit code {code}")
-        raise ChildProcessError(f"Process exited with exit code {code}")
-    logger.info(f"Process exited with exit code {code}")
+        logger.error(f"Process (Run {lid}) exited with exit code {code}")
+        raise ChildProcessError(f"Process (Run {lid}) exited with exit code {code}")
+    logger.info(f"Process (Run {lid}) exited with exit code {code}")
 
 
-def execute_capture(*cmdline, env:dict[str, str]|None=None, check=True, log=True):
+def execute_capture(
+    *cmdline,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
+    check=True,
+    log=True,
+):
     logger = getLogger("ShellExecute", not log)
-    out_logger = getLogger("ShellExecute_tty", not log)
     cmd = parse_cmd(cmdline)
     logger.info(
         f"Executing \033[33m'{"' '".join(cmd)}'\033[0m - Output has been captured."
     )
     try:
-        out = subprocess.check_output(cmd, encoding="utf-8", env=env)
-        for line in out.splitlines():
-            out_logger.info(line)
+        out = subprocess.check_output(cmd, encoding="utf-8", env=env, cwd=cwd)
     except subprocess.CalledProcessError as e:
         if check:
             logger.error(f"Process exited with exit code {e.returncode}")
