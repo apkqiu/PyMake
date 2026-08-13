@@ -72,9 +72,10 @@ class Rule:
     build_func: Callable[[str, list[str]], None] = lambda a, b: None
     defined_in: str | None = None
 
+
 class MakeConfig:
     def __init__(self):
-        self.rules:dict[str,Rule] = defaultdict(Rule)
+        self.rules: dict[str, Rule] = defaultdict(Rule)
         self.commands = {}
         self.default = None
         frame = inspect.currentframe().f_back
@@ -101,11 +102,11 @@ class MakeConfig:
         self,
         product: str,
         requirements: list[str] | str | None = None,
-        compile_func: Callable[[str, list[str]], None] = lambda a,b:None,
+        compile_func: Callable[[str, list[str]], None] = lambda a, b: None,
     ):
-        self.rules[product].product=product            
-        self.rules[product].dependencies=parse_requirements(requirements)
-        self.rules[product].build_func=compile_func
+        self.rules[product].product = product
+        self.rules[product].dependencies = parse_requirements(requirements)
+        self.rules[product].build_func = compile_func
         return compile_func
 
     def rule(self, product: str, requirements: list[str] | str | None = None):

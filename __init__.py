@@ -4,3 +4,4 @@ from .tracer import define_tracer
 from .util import glob, n
 
 __all__ = ["MakeConfig", "define_tracer", "execute", "glob", "n"]
+__version__ = "0.3"

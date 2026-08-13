@@ -1,5 +1,4 @@
 import hashlib
-import copy
 import json
 import os
 from collections import defaultdict
@@ -25,7 +24,7 @@ class SimpleDispatcher(Dispatcher):
         return True  # always complete
 
 
-BUFSIZE = 8192
+BUFSIZE = 1 * 1024 * 1024 * 1024
 
 
 def calchash(f):
@@ -36,10 +35,13 @@ def calchash(f):
             obj.update(buf)
             if not buf:
                 return obj.hexdigest()
-def objhash(buf:bytes):
+
+
+def objhash(buf: bytes):
     obj = hashlib.blake2b()
     obj.update(buf)
     return obj.hexdigest()
+
 
 class MakeFactory:
     def __init__(self, config: MakeConfig, dispatcher: Dispatcher):
@@ -80,19 +82,17 @@ class MakeFactory:
         with open(".cache.json", "w") as f:
             json.dump(to_dump, f, indent=4)
 
-
-    def __prepare(self, rule: Rule, data:dict[str, dict]):
+    def __prepare(self, rule: Rule, data: dict[str, dict]):
         target = rule.product
         target = os.path.normpath(target)
         target_d = os.path.dirname(target)
         if target_d and not os.path.exists(target_d):
             os.makedirs(target_d, exist_ok=True)
 
-
         deps = {}
         rebuild = False
         if rule.dependencies:
-            deps["$"+objhash(rule.build_func.__code__.co_code)] = rule.dependencies
+            deps["$" + objhash(rule.build_func.__code__.co_code)] = rule.dependencies
         if os.path.exists(target):
             current_hash = calchash(target)
             if current_hash != data[target].get("hash"):
@@ -100,7 +100,9 @@ class MakeFactory:
                 data[target]["hash"] = current_hash
 
                 for trace in rule.tracers:
-                    deps[objhash(trace.__code__.co_code)] = sorted(os.path.normpath(i) for i in trace(target))
+                    deps[objhash(trace.__code__.co_code)] = sorted(
+                        os.path.normpath(i) for i in trace(target)
+                    )
         else:
             rebuild = True
 
@@ -108,15 +110,14 @@ class MakeFactory:
             rebuild = True
             data[target]["dependencies"] = deps
 
-
         all_deps = []
         for i in deps.values():
             all_deps.extend(os.path.normpath(j) for j in i)
-        all_deps = sorted({*all_deps}) # 处理一些奇奇怪怪的情况
+        all_deps = sorted({*all_deps})  # 处理一些奇奇怪怪的情况
 
         return rebuild, all_deps
 
-    def __wait_deps(self, deps: list, status: dict, data:dict[str, dict]):
+    def __wait_deps(self, deps: list, status: dict, data: dict[str, dict]):
         rebuild = False
         for dep in deps:
             dep = os.path.normpath(dep)
@@ -132,7 +133,7 @@ class MakeFactory:
                 rebuild = True
                 data[dep]["hash"] = current_hash
         return rebuild, True
-    
+
     def build(self, target: str):
 
         data = self.__load_cache()
@@ -152,6 +153,7 @@ class MakeFactory:
 
         self.__save_cache(data)
         return True
+
     def call_command(self, name: str):
         id = self.dispatcher.begin(self.config.commands[name])
         return self.dispatcher.end(id)

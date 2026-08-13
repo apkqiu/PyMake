@@ -6,9 +6,11 @@ import colorlog
 
 LEVEL = logging.INFO
 
+
 def verbose(level):
     global LEVEL
     LEVEL = level
+
 
 def getLogger(name: str, dummy=False):
     # 创建logger对象
@@ -38,7 +40,9 @@ def getLogger(name: str, dummy=False):
     file_handler = logging.FileHandler(os.path.join(LOGDIR, f"pylog-{name}.log"))
     file_handler.setLevel(20)
 
-    normal_formatter = logging.Formatter("%(processName)s - %(threadName)s - %(name)s [%(levelname)s] %(message)s")
+    normal_formatter = logging.Formatter(
+        "%(processName)s - %(threadName)s - %(name)s [%(levelname)s] %(message)s"
+    )
     file_handler.setFormatter(normal_formatter)
 
     # 移除默认的handler
@@ -48,10 +52,12 @@ def getLogger(name: str, dummy=False):
     logger.addHandler(file_handler)
     return logger
 
+
 LOGDIR = os.path.join("logs", datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f"))
 os.makedirs(LOGDIR, exist_ok=True)
 
 o = sorted(os.listdir("logs"), reverse=True)
 for i in o[4:]:
     import shutil
+
     shutil.rmtree(os.path.join("logs", i))

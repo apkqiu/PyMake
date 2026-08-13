@@ -32,7 +32,7 @@ def execute(
     global id
     with id_lock:
         id += 1
-        lid = id  
+        lid = id
     logger = getLogger("ShellExecute")
     cmd = parse_cmd(cmdline)
     log_out_name = os.path.join(LOGDIR, f"run-{lid}-stdout.log")

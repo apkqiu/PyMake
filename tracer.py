@@ -12,4 +12,3 @@ def define_tracer(type):
 def get_tracer(type: str):
     # place_data(file, {"deps": deps})
     return trace_types.get(type, lambda x: [])
-
