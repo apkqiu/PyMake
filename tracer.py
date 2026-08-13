@@ -9,8 +9,7 @@ def define_tracer(type):
     return wrapper
 
 
-def trace(type: str, file: str):
-    deps = trace_types.get(type, lambda x: [])(file)
+def get_tracer(type: str):
     # place_data(file, {"deps": deps})
-    return deps
+    return trace_types.get(type, lambda x: [])
 

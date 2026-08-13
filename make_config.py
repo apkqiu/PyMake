@@ -5,11 +5,13 @@ import importlib.util
 import inspect
 import os
 import sys
-from collections.abc import Callable
+from collections import defaultdict
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from functools import partial
 
 from .logger import getLogger
-from .tracer import trace
+from .tracer import get_tracer
 
 KEY_CONFIG_EXPORT = "~!@#$%CFG_EXP*(@*)"
 
@@ -28,9 +30,7 @@ def import_from(file_path: str):
 
     # 创建模块规格
     loader = importlib.machinery.SourceFileLoader(module_name, file_path)
-    spec = importlib.util.spec_from_loader(
-        module_name, loader
-    )
+    spec = importlib.util.spec_from_loader(module_name, loader)
     if spec is None:
         raise ImportError(f"Cannot load config from {file_path}")
 
@@ -54,60 +54,76 @@ def import_from(file_path: str):
     return d
 
 
+def parse_requirements(rs):
+    new_rs = []
+    if isinstance(rs, str):
+        new_rs.extend(i.strip() for i in rs.split(","))
+    elif isinstance(rs, Iterable):
+        for i in rs:
+            new_rs.extend(parse_requirements(i))
+    return new_rs
+
+
+@dataclass
+class Rule:
+    product: str = ""
+    dependencies: list[str] = field(default_factory=list)
+    tracers: list[Callable[[str], list[str]]] = field(default_factory=list)
+    build_func: Callable[[str, list[str]], None] = lambda a, b: None
+    defined_in: str | None = None
+
 class MakeConfig:
-    def __init__(self, root_check = True):
-        self.tasks = {}
+    def __init__(self):
+        self.rules:dict[str,Rule] = defaultdict(Rule)
         self.commands = {}
         self.default = None
-        if root_check:
-            frame = inspect.currentframe().f_back
-            name = frame.f_globals.get("__name__", "")
+        frame = inspect.currentframe().f_back
+        name = frame.f_globals.get("__name__", "")
 
-            if name == "__main__":
-                from .builder_main import main as start_build
+        if name == "__main__":
+            from .builder_main import main as start_build
 
-                start_build()
-                # 既然是根调用嘛……那注册函数就跳过！
-                sys.exit()
-            else:
-                frame.f_globals[KEY_CONFIG_EXPORT] = self
+            start_build()
+            # 既然是根调用嘛……那注册函数就跳过！
+            sys.exit()
+        else:
+            frame.f_globals[KEY_CONFIG_EXPORT] = self
+
+    # define command
+    def add_command(self, name: str, func: Callable):
+        self.commands[name] = func
+        return func
 
     def command(self, name: str):
-        def wrapper(func: Callable):
-            self.commands[name] = func
-            return func
+        return partial(self.add_command, name)
 
-        return wrapper
-
-    def add(
+    def add_rule(
         self,
         product: str,
-        requirements: list[str] | str | None,
-        compile_func: Callable[[str, list[str]], None],
+        requirements: list[str] | str | None = None,
+        compile_func: Callable[[str, list[str]], None] = lambda a,b:None,
     ):
-        if requirements is None:
-            requirements = []
-        if isinstance(requirements, str):
-            requirements = [i.strip() for i in requirements.split(",")]
-        self.tasks[product] = [requirements, compile_func]
+        self.rules[product].product=product            
+        self.rules[product].dependencies=parse_requirements(requirements)
+        self.rules[product].build_func=compile_func
         return compile_func
 
-    def trace(self, lang:str, file:str):
-        files = trace(lang, file)
-        self.add(file, files, lambda *x:None)
+    def rule(self, product: str, requirements: list[str] | str | None = None):
+        return partial(self.add_rule, product, requirements)
 
-    def register(self, product: str, requirements: list[str] | str | None = None):
-        return partial(self.add, product, requirements)
+    def trace_rule(self, lang: str, file: str):
+        self.rules[file].product = file
+        self.rules[file].tracers.append(get_tracer(lang))
 
-    def include_cfg(self, cfg: "MakeConfig"):
-        self.tasks.update(cfg.tasks)
+    def extend(self, cfg: "MakeConfig"):
+        self.rules.update(cfg.rules)
         self.commands.update(cfg.commands)
         if self.default is None:
             self.default = cfg.default
 
     def include(self, file: str):
         cfg = import_from(file)
-        self.include_cfg(cfg)
+        self.extend(cfg)
 
     def subdir(self, dir: str):
         frame = inspect.currentframe().f_back
