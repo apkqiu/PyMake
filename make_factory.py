@@ -48,7 +48,12 @@ class MakeFactory:
         self.config = config
         self.dispatcher = dispatcher
 
-    def yield_queue(self, target: str, parent: str | None = None) -> Generator[Rule]:
+    def yield_queue(self, target: str, parent: str | None = None,visited: set|None = None) -> Generator[Rule]:
+        if visited is None:
+            visited = set()
+        if target in visited:
+            return
+        visited.add(target)
         rule = self.config.rules.get(target)
         if rule is None:
             if not os.path.exists(target):
@@ -57,8 +62,9 @@ class MakeFactory:
                 )
             else:
                 return
+        
         for r in rule.dependencies:
-            yield from self.yield_queue(r, target)
+            yield from self.yield_queue(r, target, visited)
         yield rule
 
     def __load_cache(self):
