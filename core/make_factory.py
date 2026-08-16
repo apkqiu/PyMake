@@ -36,6 +36,7 @@ class MakeFactory:
     def __init__(self, config: MakeConfig, dispatcher: Dispatcher):
         self.config = config
         self.dispatcher = dispatcher
+        self.data = self.__load_cache()
 
     def yield_queue(
         self, target: str, parent: str | None = None, visited: set | None = None
@@ -72,10 +73,10 @@ class MakeFactory:
         except json.JSONDecodeError:
             return {}
 
-    def __save_cache(self, data) -> None:
+    def __save_cache(self) -> None:
         """将新缓存写入文件"""
         with open(".cache.json", "w") as f:
-            json.dump(data, f, indent=4)
+            json.dump(self.data, f, indent=4)
 
     def __prepare(self, rule: Rule, old_data: dict):
         logger = getLogger("PyMake-Prepare")
@@ -104,9 +105,13 @@ class MakeFactory:
                     logger.debug(f"Found dep from trace: {deps["@"+funhash(trace)]}")
             else:
                 logger.debug("Hash not changed!")
+                unchecked_tracers = {"@"+funhash(tracer): tracer for tracer in rule.tracers}
                 for k, v in old_data.get("dependencies", {}).items():
-                    if k.startswith("@"):
+                    if k in unchecked_tracers:
                         deps[k] = v
+                        unchecked_tracers.pop(k)
+                for k, t in unchecked_tracers.items():
+                    deps[k] = t(rule.product)
         else:
             logger.debug("File not found, rebuild!")
             rebuild = True
@@ -123,7 +128,7 @@ class MakeFactory:
         logger.debug(f"Final: {target_data}")
         return rebuild, all_deps, target_data
 
-    def __wait_deps(self, deps: list, status: dict, data: dict[str, dict]):
+    def __wait_deps(self, deps: list, status: dict):
         logger = getLogger("PyMake-Wait")
         hash_futures = {}
         rebuild = False
@@ -134,42 +139,51 @@ class MakeFactory:
                 logger.debug(f"Waiting for {id}")
                 self.dispatcher.end(id)
                 rebuild = True
+        missing_buildable = []
+        for dep in deps:
+            if not os.path.exists(dep) and dep in self.config.rules:
+                missing_buildable.append(dep)
+        for dep in missing_buildable:
+            logger.debug(f"Submitting build for missing dependency: {dep}")
+            fut = self.dispatcher.begin(self.build, dep)
+            status[dep] = fut
+        for dep in missing_buildable:
+            self.dispatcher.end(status[dep])
+            rebuild = True
         for dep in deps:
             dep = os.path.normpath(dep)
-            if not os.path.exists(dep):
-                raise FileNotFoundError(dep)
             hash_futures[dep] = self.dispatcher.begin(calchash, dep)
         for dep in deps:
             dep = os.path.normpath(dep)
             current_hash = self.dispatcher.end(hash_futures[dep])
-            if current_hash != data.get(dep,{}).get("hash"):
+            if current_hash != self.data.get(dep,{}).get("hash"):
                 rebuild = True
-                data[dep] = data.get(dep, {})
-                data[dep]["hash"] = current_hash
+                self.data[dep] = self.data.get(dep, {})
+                self.data[dep]["hash"] = current_hash
         return rebuild
 
-    def build(self, target: str):
+    def build(self, target: str, ):
         logger = getLogger("PyMake")
-        data = self.__load_cache()
+        
         status = {}
         for rule in self.yield_queue(target):
             logger.debug(f"Current Rule: {rule!r}")
-            rebuild, all_deps, target_data = self.__prepare(rule, data.get(rule.product, {}))
-            data[rule.product] = target_data
+            rebuild, all_deps, target_data = self.__prepare(rule, self.data.get(rule.product, {}))
+            self.data[rule.product] = target_data
             logger.debug(f"Prepare: rebuild={rebuild!r};all_deps={all_deps!r};target_data={target_data}")
-            deps_rebuilt = self.__wait_deps(all_deps, status, data)
+            deps_rebuilt = self.__wait_deps(all_deps, status)
             logger.debug(f"Wait: deps_rebuilt={deps_rebuilt!r}")
             if rebuild or deps_rebuilt:
                 status[rule.product] = self.dispatcher.begin(
                     rule.build_func, rule.product, rule.dependencies
                 )
-                logger.debug(f"Task add: {rule.build_func} as {status[rule.product]}")
+                logger.info(f"Task add: {rule.build_func} as {status[rule.product]}")
             logger.debug("")
         ti = status.get(target)
         if ti:
             self.dispatcher.end(ti)
-        logger.debug(f"saving: {data}")
-        self.__save_cache(data)
+        logger.debug(f"saving: {self.data}")
+        self.__save_cache()
         return True
 
     def call_command(self, name: str):
