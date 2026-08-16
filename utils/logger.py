@@ -7,7 +7,7 @@ import colorlog
 LEVEL = logging.INFO
 
 
-def verbose(level):
+def setLevel(level):
     global LEVEL
     LEVEL = level
 

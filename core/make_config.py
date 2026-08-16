@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from functools import partial
 
-from .logger import getLogger
+from ..utils.logger import getLogger
 from .tracer import get_tracer
 
 KEY_CONFIG_EXPORT = "~!@#$%CFG_EXP*(@*)"
@@ -19,7 +19,7 @@ KEY_CONFIG_EXPORT = "~!@#$%CFG_EXP*(@*)"
 def import_from(file_path: str):
     """
     从指定的 Python 文件加载 MakeConfig 实例。
-    返回该文件中定义的 'd' 对象。
+    返回该文件中定义的对象。
     """
     logger = getLogger("PyMakeConfigLoader")
     # file_path = os.path.abspath(file_path)
@@ -75,18 +75,21 @@ class Rule:
 
 class MakeConfig:
     def __init__(self):
+        self.__check_toplevel()
+
         self.rules: dict[str, Rule] = defaultdict(Rule)
         self.commands = {}
         self.default = None
-        frame = inspect.currentframe().f_back
+
+    def __check_toplevel(self):
+        frame = inspect.currentframe().f_back.f_back # 已知调用栈深度为2
         name = frame.f_globals.get("__name__", "")
 
         if name == "__main__":
-            from .builder_main import main as start_build
+            from ..cli.main import main
 
-            start_build()
             # 既然是根调用嘛……那注册函数就跳过！
-            sys.exit()
+            sys.exit(main())
         else:
             frame.f_globals[KEY_CONFIG_EXPORT] = self
 
